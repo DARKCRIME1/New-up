@@ -1,7 +1,7 @@
 FROM fusuf/whatsasena:latest
 
-RUN git clone https://github.com/DARKCRIME1/xmas /root/xmas
-WORKDIR /root/xmas/
+RUN git clone https://github.com/DARKCRIME1/New-up /root/New-up
+WORKDIR /root/New-up/
 ENV TZ=Europe/Istanbul
 RUN npm install supervisor -g
 RUN yarn install --no-audit
