@@ -9,7 +9,7 @@ const path = require("path");
 const events = require("./events");
 const chalk = require('chalk');
 const config = require('./config');
-const {WAConnection, MessageOptions, MessageType, Mimetype, Presence} = require('@adiwajshing/baileys');
+const {makeWASocket, WAConnection, MessageOptions, MessageType, Mimetype, Presence} = require('@adiwajshing/baileys');
 const {Message, StringSession, Image, Video} = require('./Trex/');
 const { DataTypes } = require('sequelize');
 const { getMessage } = require("./plugins/sql/greetings");
@@ -58,81 +58,33 @@ Array.prototype.remove = function() {
 };
 
 async function Trex () {
-    await config.DATABASE.sync();
-    var StrSes_Db = await TrexDB.findAll({
-        where: {
-          info: 'StringSession'
+    const sock = makeWASocket({
+        // can provide additional config here
+        config.SESSION: true
+    })
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update
+        if(connection === 'close') {
+            const shouldReconnect = (lastDisconnect.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut
+            console.log('connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect)
+            // reconnect if not logged out
+            if(shouldReconnect) {
+                sock = startSock()
+            }
+        } else if(connection === 'open') {
+            console.log('opened connection')
         }
-    });
+    })
+    sock.ev.on('messages.upsert', m => {
+        console.log(JSON.stringify(m, undefined, 2))
+
+        console.log('replying to', m.messages[0].key.remoteJid)
+        await sock.sendMessage(m.messages[0].key.remoteJid!, { text: 'Hello there!' })
+    })
+}
     
 // ════════════════════WA CONNECTION🍁🍁🍁
-    const conn = new WAConnection();
-    conn.version = [3,2147,14];
-    const Session = new StringSession();
     
-    conn.browserDescription = ["T-REX", "Safari", '4.0.0']
-
-
-    conn.logger.level = config.DEBUG ? 'debug' : 'warn';
-    var nodb;
-
-    if (StrSes_Db.length < 1) {
-        nodb = true;
-        conn.loadAuthInfo(Session.deCrypt(config.SESSION)); 
-    } else {
-        conn.loadAuthInfo(Session.deCrypt(StrSes_Db[0].dataValues.value));
-    }
-
-    conn.on ('credentials-updated', async () => {
-        console.log(
-            chalk.blueBright.italic('▷ Login information updated! 🧨✨🪔')
-        );
-
-        const authInfo = conn.base64EncodedAuthInfo();
-        if (StrSes_Db.length < 1) {
-            await TrexDB.create({ info: "StringSession", value: Session.createStringSession(authInfo) });
-        } else {
-            await StrSes_Db[0].update({ value: Session.createStringSession(authInfo) });
-        }
-    })    
-
-    conn.on('connecting', async () => {
-        console.log(`${chalk.green.bold('🧨 T-')}${chalk.blue.bold('REX')}
-${chalk.white.bold('Version:')} ${chalk.red.bold(config.VERSION)}
-${chalk.blue.italic('🪔 Connecting to WhatsApp...▶')}`);
-    });
-    
-
-    conn.on('open', async () => {
-        console.log(
-            chalk.green.bold('🪔✨  Login successful!▶')
-        );
-
-        console.log(
-            chalk.blueBright.italic('🚀🪔 Installing external plugins...▶')
-        );
-
-        var plugins = await plugindb.PluginDB.findAll();
-        plugins.map(async (plugin) => {
-            if (!fs.existsSync('./plugins/' + plugin.dataValues.name + '.js')) {
-                console.log(plugin.dataValues.name);
-                var response = await got(plugin.dataValues.url);
-                if (response.statusCode == 200) {
-                    fs.writeFileSync('./plugins/' + plugin.dataValues.name + '.js', response.body);
-                    require('./plugins/' + plugin.dataValues.name + '.js');
-                }     
-            }
-        });
-
-        console.log(
-            chalk.blueBright.italic('🎇✨🪔 Installing plugins...')
-        );
-
-        fs.readdirSync('./plugins').forEach(plugin => {
-            if(path.extname(plugin).toLowerCase() == '.js') {
-                require('./plugins/' + plugin);
-            }
-        });
 // ════════════════════PLUGGINS SUCCESS🍁🍁🍁
         console.log(
             chalk.green.bold('🧨🪔✨ T-REX WHATSAPP BOT WORKING!▷')
@@ -453,19 +405,5 @@ ${chalk.blue.italic('🪔 Connecting to WhatsApp...▶')}`);
         )
     });
  // ════════════════════ERRROR MESSAGER🍁🍁🍁
-    try {
-        await conn.connect();
-    } catch {
-        if (!nodb) {
-            console.log(chalk.red.bold('Refreshing your old version string...'))
-            conn.loadAuthInfo(Session.deCrypt(config.SESSION)); 
-            try {
-                await conn.connect();
-            } catch {
-                return;
-            }
-        }
-    }
-}
 
 Trex();
